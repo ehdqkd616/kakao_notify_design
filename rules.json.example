@@ -1,0 +1,28 @@
+{
+  "rules": [
+    {
+      "id": "rule_001",
+      "type": "exact",
+      "keyword": "가족방",
+      "sound": "sounds/family.mp3",
+      "mute": false
+    },
+    {
+      "id": "rule_002",
+      "type": "contains",
+      "keyword": "팀",
+      "sound": "sounds/team.wav",
+      "mute": false
+    },
+    {
+      "id": "rule_003",
+      "type": "exact",
+      "keyword": "광고",
+      "sound": "",
+      "mute": true
+    }
+  ],
+  "default_sound": "sounds/default.wav",
+  "kakao_mute": true,
+  "autostart": false
+}

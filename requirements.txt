@@ -1,0 +1,7 @@
+winrt-runtime==3.2.1
+winrt-Windows.UI.Notifications==3.2.1
+winrt-Windows.UI.Notifications.Management==3.2.1
+pygame-ce==2.5.7
+pycaw==20251023
+pystray==0.19.5
+Pillow==12.2.0
