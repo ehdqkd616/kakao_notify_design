@@ -26,38 +26,22 @@ def _make_icon_image(size: int = 64) -> Image.Image:
     return img
 
 
-# ────────────────────────────────────────────────
-# 단일 tkinter 루프 관리자
-# 모든 창(설정, 로그)을 하나의 메인루프에서 Toplevel로 띄운다.
-# ────────────────────────────────────────────────
+# ── 공통 팔레트 ──────────────────────────────────────────────────────────────
+_BG     = "#0d1117"
+_BG2    = "#161b22"
+_BG3    = "#21262d"
+_FG     = "#e6edf3"
+_FG2    = "#8b949e"
+_GREEN  = "#3fb950"
+_RED    = "#f85149"
+_YELLOW = "#d29922"
+_BLUE   = "#58a6ff"
 
-class _TkManager:
-    def __init__(self):
-        self._root: tk.Tk | None = None
-        self._ready = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="TkLoop")
-        self._thread.start()
-        self._ready.wait(timeout=5)
-
-    def _run(self) -> None:
-        self._root = tk.Tk()
-        self._root.withdraw()   # 루트 창은 숨김
-        self._ready.set()
-        self._root.mainloop()
-
-    def schedule(self, fn) -> None:
-        """tkinter 스레드에서 fn을 실행하도록 예약 (스레드 안전)."""
-        if self._root:
-            self._root.after(0, fn)
-
-    @property
-    def root(self) -> tk.Tk:
-        return self._root
+_BTN  = dict(font=("Segoe UI", 9, "bold"), relief="flat", padx=14, pady=6, cursor="hand2", bd=0)
+_SBTN = dict(font=("Segoe UI", 8, "bold"), relief="flat", padx=10, pady=4, cursor="hand2", bd=0)
 
 
-# ────────────────────────────────────────────────
-# 규칙 편집 다이얼로그
-# ────────────────────────────────────────────────
+# ── 규칙 편집 다이얼로그 ──────────────────────────────────────────────────────
 
 class _RuleDialog:
     def __init__(self, parent: tk.Misc, rule_manager: RuleManager,
@@ -68,43 +52,61 @@ class _RuleDialog:
 
         win = tk.Toplevel(parent)
         win.title("규칙 추가" if rule is None else "규칙 수정")
-        win.geometry("460x260")
+        win.geometry("500x280")
         win.resizable(False, False)
+        win.configure(bg=_BG2)
         win.grab_set()
         self._win = win
         self._build()
 
-    def _build(self) -> None:
+    def _build(self):
         win, r = self._win, self._rule or {}
-        pad = {"padx": 12, "pady": 6}
+        lbl_cfg = dict(bg=_BG2, fg=_FG, font=("Segoe UI", 9))
+        ent_cfg = dict(bg=_BG3, fg=_FG, insertbackground=_FG, relief="flat", bd=4)
 
-        ttk.Label(win, text="채팅방 이름:").grid(row=0, column=0, sticky=tk.W, **pad)
+        rows = tk.Frame(win, bg=_BG2, padx=16, pady=16)
+        rows.pack(fill="both", expand=True)
+        rows.columnconfigure(1, weight=1)
+
+        # 채팅방 이름
+        tk.Label(rows, text="채팅방 이름:", **lbl_cfg).grid(row=0, column=0, sticky="w", pady=7)
         self._keyword = tk.StringVar(value=r.get("keyword", ""))
-        ttk.Entry(win, textvariable=self._keyword, width=32).grid(
-            row=0, column=1, columnspan=2, sticky=tk.W, **pad)
+        tk.Entry(rows, textvariable=self._keyword, width=34, **ent_cfg).grid(
+            row=0, column=1, columnspan=2, sticky="ew", padx=(8, 0))
 
-        ttk.Label(win, text="매칭 방식:").grid(row=1, column=0, sticky=tk.W, **pad)
+        # 매칭 방식
+        tk.Label(rows, text="매칭 방식:", **lbl_cfg).grid(row=1, column=0, sticky="w", pady=7)
         self._type = tk.StringVar(value=r.get("type", "exact"))
-        ttk.Combobox(win, textvariable=self._type,
-                     values=["exact", "contains", "regex"],
-                     width=14, state="readonly").grid(row=1, column=1, sticky=tk.W, **pad)
+        om = tk.OptionMenu(rows, self._type, "exact", "contains", "regex")
+        om.config(bg=_BG3, fg=_FG, activebackground=_BG3, activeforeground=_FG,
+                  highlightthickness=0, bd=0, font=("Segoe UI", 9), relief="flat")
+        om["menu"].config(bg=_BG3, fg=_FG, activebackground=_BLUE, activeforeground="white")
+        om.grid(row=1, column=1, sticky="w", padx=(8, 0))
 
-        ttk.Label(win, text="알림음 파일:").grid(row=2, column=0, sticky=tk.W, **pad)
+        # 알림음
+        tk.Label(rows, text="알림음 파일:", **lbl_cfg).grid(row=2, column=0, sticky="w", pady=7)
         self._sound = tk.StringVar(value=r.get("sound", ""))
-        ttk.Entry(win, textvariable=self._sound, width=28).grid(
-            row=2, column=1, sticky=tk.W, **pad)
-        ttk.Button(win, text="찾기", command=self._browse).grid(row=2, column=2, padx=4)
+        tk.Entry(rows, textvariable=self._sound, width=30, **ent_cfg).grid(
+            row=2, column=1, sticky="ew", padx=(8, 4))
+        tk.Button(rows, text="찾기", bg=_BG3, fg=_FG2,
+                  command=self._browse, **_SBTN).grid(row=2, column=2)
 
-        ttk.Label(win, text="음소거:").grid(row=3, column=0, sticky=tk.W, **pad)
+        # 음소거
+        tk.Label(rows, text="음소거:", **lbl_cfg).grid(row=3, column=0, sticky="w", pady=7)
         self._mute = tk.BooleanVar(value=r.get("mute", False))
-        ttk.Checkbutton(win, variable=self._mute).grid(row=3, column=1, sticky=tk.W, **pad)
+        tk.Checkbutton(rows, variable=self._mute, bg=_BG2, fg=_FG,
+                       selectcolor=_BG3, activebackground=_BG2,
+                       font=("Segoe UI", 9)).grid(row=3, column=1, sticky="w", padx=(8, 0))
 
-        bf = ttk.Frame(win)
-        bf.grid(row=4, column=0, columnspan=3, pady=18)
-        ttk.Button(bf, text="저장", command=self._save).pack(side=tk.LEFT, padx=10)
-        ttk.Button(bf, text="취소", command=win.destroy).pack(side=tk.LEFT)
+        # 버튼
+        bf = tk.Frame(win, bg=_BG, pady=10)
+        bf.pack(fill="x", padx=12)
+        tk.Button(bf, text="저장", bg="#1f6feb", fg="white",
+                  command=self._save, **_BTN).pack(side="right", padx=4)
+        tk.Button(bf, text="취소", bg=_BG3, fg=_FG2,
+                  command=win.destroy, **_BTN).pack(side="right")
 
-    def _browse(self) -> None:
+    def _browse(self):
         path = filedialog.askopenfilename(
             title="알림음 선택",
             filetypes=[("오디오 파일", "*.mp3 *.wav *.ogg"), ("모든 파일", "*.*")],
@@ -113,7 +115,7 @@ class _RuleDialog:
         if path:
             self._sound.set(path)
 
-    def _save(self) -> None:
+    def _save(self):
         keyword = self._keyword.get().strip()
         if not keyword:
             messagebox.showwarning("입력 오류", "채팅방 이름을 입력하세요.", parent=self._win)
@@ -133,177 +135,125 @@ class _RuleDialog:
         self._win.destroy()
 
 
-# ────────────────────────────────────────────────
-# 실시간 로그 창
-# ────────────────────────────────────────────────
-
-class LogWindow:
-    def __init__(self, tk_mgr: _TkManager, log_queue: queue.Queue):
-        self._mgr = tk_mgr
-        self._queue = log_queue
-        self._win: tk.Toplevel | None = None
-
-    def open(self) -> None:
-        """tkinter 스레드에서 호출된다."""
-        if self._win and self._win.winfo_exists():
-            self._win.lift()
-            return
-
-        win = tk.Toplevel(self._mgr.root)
-        win.title("KakaoNotify 실시간 로그")
-        win.geometry("760x440")
-        win.minsize(500, 300)
-        self._win = win
-
-        toolbar = ttk.Frame(win)
-        toolbar.pack(fill=tk.X, padx=8, pady=(8, 0))
-        ttk.Label(toolbar, text="실시간 로그", font=("", 9, "bold")).pack(side=tk.LEFT)
-
-        frame = ttk.Frame(win)
-        frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
-
-        txt = tk.Text(
-            frame, state=tk.DISABLED, wrap=tk.WORD,
-            bg="#1e1e1e", fg="#d4d4d4",
-            font=("Consolas", 9), relief=tk.FLAT, padx=6, pady=4,
-        )
-        sb = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=txt.yview)
-        txt.configure(yscrollcommand=sb.set)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
-        txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        txt.tag_configure("ts",    foreground="#858585")
-        txt.tag_configure("error", foreground="#f48771")
-        txt.tag_configure("warn",  foreground="#cca700")
-        txt.tag_configure("kakao", foreground="#4ec9b0")
-        txt.tag_configure("sound", foreground="#9cdcfe")
-
-        bottom = ttk.Frame(win)
-        bottom.pack(fill=tk.X, padx=8, pady=(0, 6))
-        auto_scroll = tk.BooleanVar(value=True)
-        ttk.Checkbutton(bottom, text="자동 스크롤", variable=auto_scroll).pack(side=tk.LEFT)
-        ttk.Button(bottom, text="지우기",
-                   command=lambda: (txt.configure(state=tk.NORMAL),
-                                    txt.delete("1.0", tk.END),
-                                    txt.configure(state=tk.DISABLED))
-                   ).pack(side=tk.RIGHT)
-
-        def poll() -> None:
-            while True:
-                try:
-                    msg = self._queue.get_nowait()
-                except queue.Empty:
-                    break
-                self._append(txt, msg)
-            if auto_scroll.get():
-                txt.see(tk.END)
-            if win.winfo_exists():
-                win.after(200, poll)
-
-        poll()
-
-    def _append(self, txt: tk.Text, msg: str) -> None:
-        txt.configure(state=tk.NORMAL)
-        if msg.startswith("[") and "]" in msg:
-            ts, rest = msg.split("]", 1)
-            txt.insert(tk.END, ts + "]", "ts")
-            msg = rest
-
-        lower = msg.lower()
-        tag = ("error" if ("오류" in lower or "error" in lower) else
-               "warn"  if ("경고" in lower or "warn"  in lower) else
-               "kakao" if ("수신" in lower or "카카오" in lower) else
-               "sound" if ("재생" in lower or "sound" in lower) else "")
-        txt.insert(tk.END, msg, tag)
-        txt.configure(state=tk.DISABLED)
-
-
-# ────────────────────────────────────────────────
-# 설정 창
-# ────────────────────────────────────────────────
+# ── 설정 창 ─────────────────────────────────────────────────────────────────
 
 class SettingsWindow:
-    def __init__(self, tk_mgr: _TkManager, config: ConfigManager, rule_manager: RuleManager):
-        self._mgr = tk_mgr
+    def __init__(self, root: tk.Tk, config: ConfigManager, rule_manager: RuleManager):
+        self._root = root
         self.config = config
         self.rule_manager = rule_manager
         self._win: tk.Toplevel | None = None
 
-    def open(self) -> None:
-        """tkinter 스레드에서 호출된다."""
+    def open(self):
         if self._win and self._win.winfo_exists():
             self._win.lift()
             return
 
-        win = tk.Toplevel(self._mgr.root)
+        win = tk.Toplevel(self._root)
         win.title("KakaoNotify 설정")
-        win.geometry("720x520")
-        win.minsize(600, 420)
+        win.geometry("740x580")
+        win.minsize(600, 460)
+        win.configure(bg=_BG)
+        win.grab_set()
         self._win = win
+        self._build(win)
 
-        top = ttk.LabelFrame(win, text="일반 설정", padding=10)
-        top.pack(fill=tk.X, padx=12, pady=8)
+    def _build(self, win: tk.Toplevel):
+        ent_cfg = dict(bg=_BG3, fg=_FG, insertbackground=_FG, relief="flat", bd=4)
+
+        # ── 일반 설정 ──
+        gen = tk.Frame(win, bg=_BG2, padx=14, pady=12)
+        gen.pack(fill="x", padx=12, pady=(12, 4))
+        tk.Label(gen, text="일반 설정", font=("Segoe UI", 9, "bold"),
+                 bg=_BG2, fg=_FG2).pack(anchor="w", pady=(0, 8))
 
         self._kakao_mute_var = tk.BooleanVar(value=self.config.kakao_mute)
-        ttk.Checkbutton(top, text="카카오톡 기본 알림음 음소거",
-                        variable=self._kakao_mute_var).pack(anchor=tk.W)
+        tk.Checkbutton(gen, text="카카오톡 기본 알림음 음소거",
+                       variable=self._kakao_mute_var,
+                       bg=_BG2, fg=_FG, selectcolor=_BG3, activebackground=_BG2,
+                       font=("Segoe UI", 9)).pack(anchor="w")
 
         self._autostart_var = tk.BooleanVar(value=self.config.autostart)
-        ttk.Checkbutton(top, text="Windows 시작 시 자동 실행",
-                        variable=self._autostart_var).pack(anchor=tk.W)
+        tk.Checkbutton(gen, text="Windows 시작 시 자동 실행",
+                       variable=self._autostart_var,
+                       bg=_BG2, fg=_FG, selectcolor=_BG3, activebackground=_BG2,
+                       font=("Segoe UI", 9)).pack(anchor="w", pady=(4, 0))
 
-        ds = ttk.Frame(top)
-        ds.pack(fill=tk.X, pady=(6, 0))
-        ttk.Label(ds, text="기본 알림음:").pack(side=tk.LEFT)
+        ds = tk.Frame(gen, bg=_BG2)
+        ds.pack(fill="x", pady=(10, 0))
+        tk.Label(ds, text="기본 알림음:", bg=_BG2, fg=_FG,
+                 font=("Segoe UI", 9)).pack(side="left")
         self._default_sound_var = tk.StringVar(value=self.config.default_sound)
-        ttk.Entry(ds, textvariable=self._default_sound_var, width=42).pack(side=tk.LEFT, padx=6)
-        ttk.Button(ds, text="찾기",
-                   command=lambda: self._browse_default(win)).pack(side=tk.LEFT)
+        tk.Entry(ds, textvariable=self._default_sound_var, width=42, **ent_cfg).pack(
+            side="left", padx=6)
+        tk.Button(ds, text="찾기", bg=_BG3, fg=_FG2,
+                  command=lambda: self._browse_default(win), **_SBTN).pack(side="left")
 
-        rf = ttk.LabelFrame(win, text="채팅방별 알림음 규칙", padding=10)
-        rf.pack(fill=tk.BOTH, expand=True, padx=12, pady=4)
+        # ── 규칙 목록 ──
+        rf = tk.Frame(win, bg=_BG2, padx=14, pady=12)
+        rf.pack(fill="both", expand=True, padx=12, pady=4)
 
-        tb = ttk.Frame(rf)
-        tb.pack(fill=tk.X, pady=(0, 6))
+        # 툴바
+        tb = tk.Frame(rf, bg=_BG2)
+        tb.pack(fill="x", pady=(0, 6))
+        tk.Label(tb, text="채팅방별 알림음 규칙", font=("Segoe UI", 9, "bold"),
+                 bg=_BG2, fg=_FG2).pack(side="left")
+
+        # Treeview 다크 스타일
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure("Dark.Treeview", background=_BG3, foreground=_FG,
+                        fieldbackground=_BG3, rowheight=26, borderwidth=0)
+        style.configure("Dark.Treeview.Heading", background=_BG2, foreground=_FG2,
+                        borderwidth=0, relief="flat")
+        style.map("Dark.Treeview", background=[("selected", "#1f6feb")])
 
         cols = ("채팅방 이름", "매칭 방식", "알림음 파일", "음소거")
-        tree = ttk.Treeview(rf, columns=cols, show="headings", height=10)
-        for col, w in zip(cols, (140, 80, 340, 60)):
+        tree = ttk.Treeview(rf, columns=cols, show="headings",
+                             height=10, style="Dark.Treeview")
+        for col, w in zip(cols, (130, 80, 340, 60)):
             tree.heading(col, text=col)
-            tree.column(col, width=w, minwidth=50)
-        sb = ttk.Scrollbar(rf, orient=tk.VERTICAL, command=tree.yview)
+            tree.column(col, width=w, minwidth=40)
+
+        sb = ttk.Scrollbar(rf, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
 
-        ttk.Button(tb, text="+ 추가",
-                   command=lambda: _RuleDialog(win, self.rule_manager,
-                                               on_done=lambda: self._refresh(tree))
-                   ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tb, text="수정",
-                   command=lambda: self._edit(win, tree)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tb, text="삭제",
-                   command=lambda: self._delete(win, tree)).pack(side=tk.LEFT, padx=2)
+        # 버튼 (tree 정의 후 — 클로저가 tree를 캡처)
+        tk.Button(tb, text="+ 추가", bg=_BG3, fg=_FG,
+                  command=lambda: _RuleDialog(win, self.rule_manager,
+                                              on_done=lambda: self._refresh(tree)),
+                  **_SBTN).pack(side="left", padx=(12, 2))
+        tk.Button(tb, text="수정", bg=_BG3, fg=_FG,
+                  command=lambda: self._edit(win, tree), **_SBTN).pack(side="left", padx=2)
+        tk.Button(tb, text="삭제", bg=_BG3, fg=_RED,
+                  command=lambda: self._delete(win, tree), **_SBTN).pack(side="left", padx=2)
 
+        sb.pack(side="right", fill="y")
+        tree.pack(fill="both", expand=True)
         self._refresh(tree)
 
-        bf = ttk.Frame(win)
-        bf.pack(fill=tk.X, padx=12, pady=10)
-        ttk.Button(bf, text="저장",
-                   command=lambda: self._save(win)).pack(side=tk.RIGHT, padx=6)
-        ttk.Button(bf, text="취소", command=win.destroy).pack(side=tk.RIGHT)
+        # 저장 / 취소
+        bf = tk.Frame(win, bg=_BG, pady=10)
+        bf.pack(fill="x", padx=12)
+        tk.Button(bf, text="저장", bg="#1f6feb", fg="white",
+                  command=lambda: self._save(win), **_BTN).pack(side="right", padx=4)
+        tk.Button(bf, text="취소", bg=_BG3, fg=_FG2,
+                  command=win.destroy, **_BTN).pack(side="right")
 
-    def _refresh(self, tree: ttk.Treeview) -> None:
+    def _refresh(self, tree: ttk.Treeview):
         tree.delete(*tree.get_children())
         for rule in self.config.rules:
-            tree.insert("", tk.END, iid=rule.get("id", ""), values=(
+            tree.insert("", "end", iid=rule.get("id", ""), values=(
                 rule.get("keyword", ""),
                 rule.get("type", "exact"),
                 rule.get("sound", ""),
                 "예" if rule.get("mute") else "아니오",
             ))
 
-    def _browse_default(self, parent) -> None:
+    def _browse_default(self, parent):
         path = filedialog.askopenfilename(
             title="기본 알림음 선택",
             filetypes=[("오디오 파일", "*.mp3 *.wav *.ogg"), ("모든 파일", "*.*")],
@@ -312,7 +262,7 @@ class SettingsWindow:
         if path:
             self._default_sound_var.set(path)
 
-    def _edit(self, parent, tree: ttk.Treeview) -> None:
+    def _edit(self, parent, tree: ttk.Treeview):
         sel = tree.selection()
         if not sel:
             messagebox.showwarning("선택 없음", "수정할 규칙을 선택하세요.", parent=parent)
@@ -322,7 +272,7 @@ class SettingsWindow:
             _RuleDialog(parent, self.rule_manager, rule=rule,
                         on_done=lambda: self._refresh(tree))
 
-    def _delete(self, parent, tree: ttk.Treeview) -> None:
+    def _delete(self, parent, tree: ttk.Treeview):
         sel = tree.selection()
         if not sel:
             messagebox.showwarning("선택 없음", "삭제할 규칙을 선택하세요.", parent=parent)
@@ -331,7 +281,7 @@ class SettingsWindow:
             self.rule_manager.remove_rule(sel[0])
             self._refresh(tree)
 
-    def _save(self, win: tk.Toplevel) -> None:
+    def _save(self, win: tk.Toplevel):
         self.config.kakao_mute = self._kakao_mute_var.get()
         self.config.autostart = self._autostart_var.get()
         self.config.default_sound = self._default_sound_var.get()
@@ -340,53 +290,289 @@ class SettingsWindow:
         win.destroy()
 
 
-# ────────────────────────────────────────────────
-# 트레이 앱
-# ────────────────────────────────────────────────
+# ── 메인 앱 (트레이 + 메인 윈도우) ──────────────────────────────────────────
 
 class TrayApp:
+    KK_YELLOW = "#FAE100"
+
     def __init__(self, config: ConfigManager, rule_manager: RuleManager,
                  log_queue: queue.Queue, on_quit=None):
         self.on_quit = on_quit
+        self._config = config
+        self._rule_manager = rule_manager
+        self._log_queue = log_queue
         self._active = True
-        self._icon: pystray.Icon | None = None
+        self._tray: pystray.Icon | None = None
+        self._icon_img = _make_icon_image(64)
+        self._all_lines: list[tuple[str, str]] = []
 
-        self._tk = _TkManager()
-        self._settings = SettingsWindow(self._tk, config, rule_manager)
-        self._log_win = LogWindow(self._tk, log_queue)
+        self._root = self._build_window()
+        self._settings = SettingsWindow(self._root, config, rule_manager)
+        self._build_tray()
+
+    # ── 윈도우 구성 ──────────────────────────────────────────────────────────
+
+    def _build_window(self) -> tk.Tk:
+        root = tk.Tk()
+        root.title("KakaoNotify")
+        root.geometry("820x580")
+        root.minsize(660, 440)
+        root.configure(bg=_BG)
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        try:
+            from PIL import ImageTk
+            _tk_icon = ImageTk.PhotoImage(
+                self._icon_img.resize((32, 32), Image.LANCZOS)
+            )
+            root.iconphoto(True, _tk_icon)
+            self._tk_icon = _tk_icon  # GC 방지
+        except Exception:
+            pass
+
+        self._build_header(root)
+        self._build_controls(root)
+        self._build_log_area(root)
+        root.after(200, self._poll_log)
+        return root
+
+    def _build_header(self, root: tk.Tk):
+        hdr = tk.Frame(root, bg=self.KK_YELLOW, height=50)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+        tk.Label(hdr, text="  🔔  KakaoNotify",
+                 font=("Segoe UI", 14, "bold"),
+                 bg=self.KK_YELLOW, fg="#1a1400").pack(side="left", padx=14)
+        tk.Label(hdr, text="카카오톡 채팅방별 알림음 커스터마이저",
+                 font=("Segoe UI", 9),
+                 bg=self.KK_YELLOW, fg="#7a6200").pack(side="right", padx=14)
+
+    def _build_controls(self, root: tk.Tk):
+        bar = tk.Frame(root, bg=_BG2, pady=9)
+        bar.pack(fill="x")
+
+        self._dot = tk.Label(bar, text="●", font=("Segoe UI", 15),
+                              bg=_BG2, fg=_GREEN)
+        self._dot.pack(side="left", padx=(14, 4))
+        self._status_lbl = tk.Label(bar, text="감지 중",
+                                     font=("Segoe UI", 10, "bold"),
+                                     bg=_BG2, fg=_FG)
+        self._status_lbl.pack(side="left", padx=(0, 20))
+
+        self._btn_toggle = tk.Button(bar, text="⏸  일시 정지",
+                                      bg=_YELLOW, fg="#0d1117",
+                                      command=self._toggle_active, **_BTN)
+        self._btn_toggle.pack(side="left", padx=3)
+
+        # self._settings 가 아직 없으므로 lambda로 지연 참조
+        tk.Button(bar, text="⚙  설정",
+                  bg=_BLUE, fg="white",
+                  command=lambda: self._settings.open(),
+                  **_BTN).pack(side="left", padx=3)
+
+        tk.Button(bar, text="🔽  트레이로",
+                  bg=_BG3, fg=_FG2,
+                  command=self._hide_to_tray, **_BTN).pack(side="right", padx=10)
+
+    def _build_log_area(self, root: tk.Tk):
+        lhdr = tk.Frame(root, bg=_BG, pady=5)
+        lhdr.pack(fill="x", padx=12)
+
+        tk.Label(lhdr, text="실시간 로그",
+                 font=("Segoe UI", 9, "bold"),
+                 bg=_BG, fg=_FG2).pack(side="left")
+
+        self._filter_var = tk.StringVar(value="ALL")
+        for txt, col in [("ALL", _FG2), ("알림", _GREEN), ("오류", _RED)]:
+            tk.Radiobutton(
+                lhdr, text=txt, variable=self._filter_var, value=txt,
+                command=self._apply_filter,
+                bg=_BG, fg=col, selectcolor=_BG3,
+                activebackground=_BG, font=("Segoe UI", 8),
+                relief="flat",
+            ).pack(side="left", padx=5)
+
+        self._auto_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(lhdr, text="자동 스크롤",
+                       variable=self._auto_var,
+                       bg=_BG, fg=_FG2, selectcolor=_BG3,
+                       activebackground=_BG,
+                       font=("Segoe UI", 8)).pack(side="right")
+        tk.Button(lhdr, text="지우기", bg=_BG, fg=_FG2,
+                  font=("Segoe UI", 8), relief="flat", bd=0,
+                  command=self._clear_log).pack(side="right", padx=8)
+
+        wrap = tk.Frame(root, bg=_BG)
+        wrap.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        self._log_txt = tk.Text(
+            wrap,
+            font=("Consolas", 8),
+            bg="#010409", fg="#c9d1d9",
+            relief="flat", bd=0, state="disabled", wrap="none",
+            selectbackground="#264f78",
+        )
+        sby = tk.Scrollbar(wrap, orient="vertical", command=self._log_txt.yview, bg=_BG2)
+        sbx = tk.Scrollbar(wrap, orient="horizontal", command=self._log_txt.xview, bg=_BG2)
+        self._log_txt.configure(yscrollcommand=sby.set, xscrollcommand=sbx.set)
+        sby.pack(side="right", fill="y")
+        sbx.pack(side="bottom", fill="x")
+        self._log_txt.pack(fill="both", expand=True)
+
+        self._log_txt.tag_configure("TS",     foreground="#30363d")
+        self._log_txt.tag_configure("notify", foreground=_GREEN)
+        self._log_txt.tag_configure("error",  foreground=_RED)
+        self._log_txt.tag_configure("ocr",    foreground=_BLUE)
+        self._log_txt.tag_configure("warn",   foreground=_YELLOW)
+
+    # ── 트레이 ───────────────────────────────────────────────────────────────
+
+    def _build_tray(self):
+        menu = pystray.Menu(
+            pystray.MenuItem(
+                "KakaoNotify 열기",
+                lambda i, it: self._root.after(0, self._show_from_tray),
+                default=True,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "활성화",
+                lambda i, it: self._root.after(0, self._toggle_active),
+                checked=lambda item: self._active,
+            ),
+            pystray.MenuItem(
+                "설정 열기",
+                lambda i, it: self._root.after(0, self._settings.open),
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "종료",
+                lambda i, it: self._root.after(0, self._quit_app),
+            ),
+        )
+        self._tray = pystray.Icon(
+            "KakaoNotify", self._icon_img, "KakaoNotify", menu
+        )
+        threading.Thread(target=self._tray.run, daemon=True, name="TrayIcon").start()
+
+    # ── 상태 토글 ────────────────────────────────────────────────────────────
+
+    def _toggle_active(self):
+        self._active = not self._active
+        if self._active:
+            self._dot.config(fg=_GREEN)
+            self._status_lbl.config(text="감지 중")
+            self._btn_toggle.config(text="⏸  일시 정지", bg=_YELLOW, fg="#0d1117")
+        else:
+            self._dot.config(fg=_RED)
+            self._status_lbl.config(text="일시 정지")
+            self._btn_toggle.config(text="▶  재개", bg=_GREEN, fg="#0d1117")
+        print(f"[Tray] {'활성화' if self._active else '비활성화'}")
+
+    # ── 트레이 숨기기 / 복원 ─────────────────────────────────────────────────
+
+    def _hide_to_tray(self):
+        self._root.withdraw()
+
+    def _show_from_tray(self):
+        self._root.deiconify()
+        self._root.lift()
+
+    # ── 로그 ─────────────────────────────────────────────────────────────────
+
+    def _poll_log(self):
+        changed = False
+        while True:
+            try:
+                line = self._log_queue.get_nowait()
+            except queue.Empty:
+                break
+            tag = self._classify(line)
+            self._all_lines.append((line, tag))
+            if len(self._all_lines) > 2000:
+                self._all_lines = self._all_lines[-2000:]
+            if self._passes_filter(tag, self._filter_var.get()):
+                self._append_line(line, tag)
+                changed = True
+
+        if changed and self._auto_var.get():
+            self._log_txt.see("end")
+
+        if self._root.winfo_exists():
+            self._root.after(200, self._poll_log)
+
+    @staticmethod
+    def _classify(line: str) -> str:
+        lo = line.lower()
+        if "오류" in lo or "error" in lo:
+            return "error"
+        if "ocr" in lo:
+            return "ocr"
+        if "경고" in lo or "warn" in lo:
+            return "warn"
+        if "수신" in lo:
+            return "notify"
+        return ""
+
+    @staticmethod
+    def _passes_filter(tag: str, flt: str) -> bool:
+        if flt == "ALL":
+            return True
+        if flt == "알림":
+            return tag == "notify"
+        if flt == "오류":
+            return tag == "error"
+        return True
+
+    def _apply_filter(self):
+        flt = self._filter_var.get()
+        self._log_txt.config(state="normal")
+        self._log_txt.delete("1.0", "end")
+        self._log_txt.config(state="disabled")
+        for line, tag in self._all_lines[-500:]:
+            if self._passes_filter(tag, flt):
+                self._append_line(line, tag)
+        if self._auto_var.get():
+            self._log_txt.see("end")
+
+    def _append_line(self, line: str, tag: str):
+        self._log_txt.config(state="normal")
+        if line.startswith("[") and "]  " in line:
+            idx = line.index("]  ") + 3
+            self._log_txt.insert("end", line[:idx], "TS")
+            self._log_txt.insert("end", line[idx:], tag)
+        else:
+            self._log_txt.insert("end", line, tag)
+        if int(self._log_txt.index("end-1c").split(".")[0]) > 2000:
+            self._log_txt.delete("1.0", "400.0")
+        self._log_txt.config(state="disabled")
+
+    def _clear_log(self):
+        self._log_txt.config(state="normal")
+        self._log_txt.delete("1.0", "end")
+        self._log_txt.config(state="disabled")
+        self._all_lines.clear()
+
+    # ── 종료 ─────────────────────────────────────────────────────────────────
+
+    def _on_close(self):
+        self._hide_to_tray()
+
+    def _quit_app(self):
+        if self.on_quit:
+            self.on_quit()
+        if self._tray:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
+        self._root.after(0, self._root.destroy)
+
+    # ── 진입점 ───────────────────────────────────────────────────────────────
+
+    def run(self) -> None:
+        self._root.mainloop()
 
     @property
     def is_active(self) -> bool:
         return self._active
-
-    def _open_settings(self, icon, item) -> None:
-        self._tk.schedule(self._settings.open)
-
-    def _open_log(self, icon, item) -> None:
-        self._tk.schedule(self._log_win.open)
-
-    def _toggle_active(self, icon, item) -> None:
-        self._active = not self._active
-        print(f"[Tray] {'활성화' if self._active else '비활성화'}")
-
-    def _quit(self, icon, item) -> None:
-        if self.on_quit:
-            self.on_quit()
-        icon.stop()
-
-    def run(self) -> None:
-        menu = pystray.Menu(
-            pystray.MenuItem("설정 열기", self._open_settings, default=True),
-            pystray.MenuItem("로그 보기", self._open_log),
-            pystray.MenuItem("활성화", self._toggle_active,
-                             checked=lambda item: self._active),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("종료", self._quit),
-        )
-        self._icon = pystray.Icon(
-            name="KakaoNotify",
-            icon=_make_icon_image(),
-            title="KakaoNotify",
-            menu=menu,
-        )
-        self._icon.run()

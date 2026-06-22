@@ -12,6 +12,10 @@ sounds/default.wav
 # 사용자별 설정 (경로가 머신마다 다름 — rules.json.example 참고)
 # rules.json  ← 예시 포함이므로 추적 유지
 
+# 설계 문서 (개인 보관용)
+kakao_notify_design.md
+kakao_notify_design.docx
+
 # 빌드/배포
 dist/
 build/

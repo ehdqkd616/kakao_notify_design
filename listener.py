@@ -61,14 +61,74 @@ def _get_window_size(hwnd: int) -> tuple[int, int]:
     return rect.right - rect.left, rect.bottom - rect.top
 
 
+def _is_topmost(hwnd: int) -> bool:
+    WS_EX_TOPMOST = 0x00000008
+    ex_style = _user32.GetWindowLongW(hwnd, -20)  # GWL_EXSTYLE
+    return bool(ex_style & WS_EX_TOPMOST)
+
+
 def _send_get_text(hwnd: int) -> str:
-    """SendMessage(WM_GETTEXT)로 창 텍스트를 직접 읽는다.
-    RichEdit 컨트롤은 WM_GETTEXTLENGTH가 0을 반환하는 경우가 있어
-    큰 버퍼를 사용해 길이 확인 없이 직접 읽는다."""
     WM_GETTEXT = 0x000D
     buf = ctypes.create_unicode_buffer(2048)
     n = _user32.SendMessageW(hwnd, WM_GETTEXT, 2048, buf)
     return buf.value.strip() if n > 0 else ""
+
+
+async def _ocr_popup_name(hwnd: int) -> str:
+    """Windows 내장 OCR로 팝업 상단 행만 캡처해 채팅방/발신자 이름을 읽는다."""
+    try:
+        from PIL import Image, ImageGrab
+        import io
+        from winrt.windows.media.ocr import OcrEngine
+        from winrt.windows.graphics.imaging import BitmapDecoder
+        from winrt.windows.storage.streams import InMemoryRandomAccessStream, DataWriter
+
+        rect = ctypes.wintypes.RECT()
+        _user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        w = rect.right - rect.left
+        h = rect.bottom - rect.top
+        if w <= 0 or h <= 0:
+            return ""
+
+        # 채팅방 이름은 팝업 최상단 행에 위치 — 상단 40px만 크롭
+        crop_h = min(40, h)
+        img = ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.top + crop_h))
+
+        # OCR 정확도를 위해 2배 확대
+        img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        png_bytes = bytearray(buf.getvalue())
+
+        stream = InMemoryRandomAccessStream()
+        writer = DataWriter(stream.get_output_stream_at(0))
+        writer.write_bytes(png_bytes)
+        await writer.store_async()
+        stream.seek(0)
+
+        decoder = await BitmapDecoder.create_async(stream)
+        bitmap = await decoder.get_software_bitmap_async()
+
+        engine = OcrEngine.try_create_from_user_profile_languages()
+        if engine is None:
+            return ""
+
+        result = await engine.recognize_async(bitmap)
+        if not result:
+            return ""
+
+        _skip = {"kakaotalk", "카카오톡", ""}
+        lines_text = [ln.text.strip() for ln in result.lines if ln.text.strip()]
+        print(f"[Listener] OCR 결과: {lines_text}")
+
+        for name in lines_text:
+            if name and name.lower() not in _skip:
+                return name
+
+    except Exception as e:
+        print(f"[Listener] OCR 오류: {e}")
+    return ""
 
 
 def _get_uia_name(hwnd: int) -> str:
@@ -167,39 +227,57 @@ class NotificationListener:
                 new_hwnds = set(current_eva) - prev_eva_hwnds
                 prev_eva_hwnds = set(current_eva)
 
-                for hwnd in new_hwnds:
-                    cls, title = current_eva[hwnd]
+                # 같은 폴 사이클에 생긴 EVA 창들을 하나의 알림 이벤트로 묶는다.
+                # 알림 1건에 여러 EVA 창이 동시에 생성될 때,
+                # 이름 없는 창이 먼저 처리돼 _channel_이 되는 문제를 방지한다.
+                popup_hwnds = [
+                    hwnd for hwnd in new_hwnds
+                    if (lambda sz: 5 < sz[0] < 700 and 30 < sz[1] < 350)(
+                        _get_window_size(hwnd)
+                    )
+                ]
 
-                    # 크기 필터: 0×0(채팅창 전환) 및 너무 큰 창 제외
-                    w, h = _get_window_size(hwnd)
-                    if not (5 < w < 700 and 5 < h < 350):
-                        continue
+                if popup_hwnds:
+                    for _h in popup_hwnds:
+                        _c, _t = current_eva[_h]
+                        _w, _hh = _get_window_size(_h)
+                        _top = _is_topmost(_h)
+                        print(f"[Debug] EVA new: class='{_c}' title='{_t}' size={_w}×{_hh} topmost={_top}")
 
-                    # title → 자식 창 → UIA 순으로 채팅방 이름 탐색
-                    chat_name = title.strip()
-                    if not chat_name:
+                    # title이 있는 창을 앞으로 정렬
+                    popup_hwnds.sort(
+                        key=lambda h: 0 if current_eva[h][1].strip() else 1
+                    )
+
+                    chat_name = ""
+                    for hwnd in popup_hwnds:
+                        _, title = current_eva[hwnd]
+                        chat_name = title.strip()
+                        if chat_name:
+                            break
                         for t in _get_child_texts(hwnd):
                             t = t.strip()
                             if t and t.lower() not in {"kakaotalk", "카카오톡"}:
                                 chat_name = t
                                 break
-                    if not chat_name:
-                        chat_name = _get_uia_name(hwnd)
+                        if not chat_name:
+                            chat_name = _get_uia_name(hwnd)
+                        if not chat_name and _is_topmost(hwnd):
+                            chat_name = await _ocr_popup_name(hwnd)
+                        if chat_name:
+                            break
 
-                    # 이름을 못 읽은 채널 알림은 기본 알림음 대상으로 처리
                     if not chat_name:
                         chat_name = "_channel_"
 
+                    w, h = _get_window_size(popup_hwnds[0])
                     print(f"[Listener] EVA창 감지: {w}×{h} | 채팅방='{chat_name}'")
 
-                    # 쿨다운: 같은 채팅방 알림이 2초 내 중복 방지
                     now = time.monotonic()
-                    if now - self._last_fired.get(chat_name, 0) < _COOLDOWN_SEC:
-                        continue
-                    self._last_fired[chat_name] = now
-
-                    print(f"[Listener] 카카오톡 수신: '{chat_name}'")
-                    self.callback(chat_name)
+                    if now - self._last_fired.get(chat_name, 0) >= _COOLDOWN_SEC:
+                        self._last_fired[chat_name] = now
+                        print(f"[Listener] 카카오톡 수신: '{chat_name}'")
+                        self.callback(chat_name)
 
             except Exception as e:
                 print(f"[Listener] 폴링 오류: {e}")
