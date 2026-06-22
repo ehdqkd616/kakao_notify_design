@@ -9,8 +9,8 @@ __pycache__/
 # 자동 생성 파일
 sounds/default.wav
 
-# 사용자별 설정 (경로가 머신마다 다름 — rules.json.example 참고)
-# rules.json  ← 예시 포함이므로 추적 유지
+# 사용자별 설정 (채팅방 이름·알림음 경로 등 개인 정보 포함)
+rules.json
 
 # 설계 문서 (개인 보관용)
 kakao_notify_design.md
